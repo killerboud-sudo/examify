@@ -1,5 +1,5 @@
 import { generateObject } from 'ai';
-import { Exam } from '../schema';
+import { ExamAI, toExam } from '../schema';
 import { PROVIDERS, type ProviderId } from './providers';
 
 const SYSTEM = `You transcribe photos of Arabic school math exams into structured JSON.
@@ -10,13 +10,14 @@ Rules:
 - One section per exercise/situation; title includes the points if written (e.g. "التمرين الأول - 06 نقاط").
 - A geometric figure becomes a "figure" block (template right-triangle) with its letters and side labels.
 - Years: write them in normal order (2025/2026), not mirrored.
-- Header goes to header.rightLines / leftLines, teacher name to subtitle/footerRight, "بالتوفيق" to footerLeft.
+- Header fields: school, directorate (wilaya), level, duration, day, calculatorAllowed. Titles never include the points: put the number in "points" (0 if absent).
+- Teacher name to subtitle/footerRight, "بالتوفيق" to footerLeft.
 - Use empty strings when something is absent.`;
 
 export async function extractExam(provider: ProviderId, imageDataUrl: string) {
   const { object } = await generateObject({
     model: PROVIDERS[provider].model(),
-    schema: Exam,
+    schema: ExamAI,
     system: SYSTEM,
     maxRetries: 1,
     messages: [{ role: 'user', content: [
@@ -24,6 +25,5 @@ export async function extractExam(provider: ProviderId, imageDataUrl: string) {
       { type: 'image', image: imageDataUrl },
     ] }],
   });
-  // assign stable ids client-side usage
-  return { ...object, sections: object.sections.map((s) => ({ ...s, id: s.id || crypto.randomUUID() })) };
+  return toExam(object);
 }

@@ -1,9 +1,8 @@
 import { z } from 'zod';
 
 /**
- * Single source of truth for an exam.
- * Everything (AI extraction, editor, preview, future exporters) speaks this shape.
- * All fields are required (no optionals) so it also works with strict structured outputs (OpenAI).
+ * Single source of truth for an exam. AI extraction fills ExamAI; the app adds ids, template, images, page breaks.
+ * All AI fields are required (no optionals) so it also works with strict structured outputs (OpenAI).
  * Math is LaTeX, French notation: decimal comma written as {,}  e.g. 0{,}0075
  */
 export const TextBlock = z.object({ type: z.literal('text'), text: z.string().describe('Arabic text; inline math between $...$'), bold: z.boolean() });
@@ -17,31 +16,37 @@ export const FigureBlock = z.object({
   baseLabel: z.string().describe('e.g. "3 cm"'),
   heightLabel: z.string().describe('e.g. "4 cm"'),
 });
-export const Block = z.discriminatedUnion('type', [TextBlock, EquationBlock, FigureBlock]);
-export type Block = z.infer<typeof Block>;
+export const AIBlock = z.discriminatedUnion('type', [TextBlock, EquationBlock, FigureBlock]);
+export const ImageBlock = z.object({ type: z.literal('image'), src: z.string(), width: z.number().describe('percent of the frame width, 10-100') });
 
-export const Section = z.object({
-  id: z.string(),
-  title: z.string().describe('e.g. "التمرين الأول - 06 نقاط"'),
-  blocks: z.array(Block),
-});
-export type Section = z.infer<typeof Section>;
+export type Block = z.infer<typeof AIBlock> | z.infer<typeof ImageBlock>;
 
-export const Exam = z.object({
+export const ExamAI = z.object({
   header: z.object({
-    rightLines: z.array(z.string()).describe('Header lines shown on the right (directorate, school, level, year...)'),
-    leftLines: z.array(z.string()).describe('Header lines shown on the left (duration...)'),
+    school: z.string().describe('School name only (after "متوسطة:")'),
+    directorate: z.string().describe('Wilaya only (after "مديرية التربية لولاية:")'),
+    level: z.string(), duration: z.string(), day: z.string(),
+    calculatorAllowed: z.boolean(),
   }),
-  title: z.string(),
-  subtitle: z.string(),
-  sections: z.array(Section),
-  footerRight: z.string(),
-  footerLeft: z.string(),
+  title: z.string(), subtitle: z.string(),
+  sections: z.array(z.object({
+    title: z.string().describe('e.g. "التمرين الأول" — WITHOUT the points'),
+    points: z.number().describe('points of this exercise, 0 if not written'),
+    blocks: z.array(AIBlock),
+  })),
+  footerRight: z.string(), footerLeft: z.string(),
 });
-export type Exam = z.infer<typeof Exam>;
 
+export type Section = { id: string; title: string; points: number; breakAfter: boolean; blocks: Block[] };
+export type Exam = Omit<z.infer<typeof ExamAI>, 'sections'> & { templateId: string; sections: Section[] };
+
+export const DEFAULT_TEMPLATE = 'navy';
+export const toExam = (ai: z.infer<typeof ExamAI>, templateId = DEFAULT_TEMPLATE): Exam => ({
+  ...ai, templateId,
+  sections: ai.sections.map((s) => ({ ...s, id: crypto.randomUUID(), breakAfter: false })),
+});
 export const emptyExam = (): Exam => ({
-  header: { rightLines: ['المستوى: '], leftLines: ['المدة: '] },
-  title: 'اختبار في مادة الرياضيات', subtitle: '',
-  sections: [], footerRight: '', footerLeft: 'بالتوفيق',
+  templateId: DEFAULT_TEMPLATE,
+  header: { school: '', directorate: '', level: '', duration: '', day: '', calculatorAllowed: false },
+  title: 'الفرض المحروس الأول', subtitle: '', sections: [], footerRight: '', footerLeft: 'بالتوفيق',
 });
