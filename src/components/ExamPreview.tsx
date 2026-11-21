@@ -1,5 +1,6 @@
 import type { Exam, Block, Section } from '@/lib/schema';
 import { FIGURES } from '@/lib/figures/registry';
+import { fontStack } from '@/lib/fonts';
 import { Equation, RichText } from './Tex';
 import { IconCal, IconCalc, IconCap, IconClock, IconMap, IconSchool } from './Icons';
 
@@ -17,7 +18,13 @@ function Blocks({ blocks, navy }: { blocks: Block[]; navy: boolean }) {
         ? <p key={i} className={`qi ${b.bold ? 'q' : ''}`}><span className="num">{m[1]}</span><span><RichText text={m[2]} /></span></p>
         : <p key={i} className={b.bold ? 'q' : ''}><RichText text={b.text} /></p>);
     } else if (b.type === 'equation') out.push(<Equation key={i} latex={b.latex} />);
-    else if (b.src) out.push(<div className="imgblk" key={i}><img src={b.src} alt="" style={{ width: `${b.width}%` }} /></div>);
+    else if (b.type === 'pagebreak') out.push(<div className="pagebreak" key={i} aria-hidden="true" />);
+    else if (b.type === 'table') out.push(
+      <table key={i} className={`tbl ${b.bordered ? 'bd' : ''}`} style={b.widths.length ? { tableLayout: 'fixed', width: '100%' } : undefined}>
+        {b.widths.length > 0 && <colgroup>{b.widths.map((w, k) => <col key={k} style={{ width: `${w}%` }} />)}</colgroup>}
+        <tbody>{b.rows.map((row, ri) => <tr key={ri}>{row.map((c, ci) => { const T = c.header ? 'th' : 'td'; return <T key={ci} colSpan={c.colspan} rowSpan={c.rowspan}><RichText text={c.text} /></T>; })}</tr>)}</tbody>
+      </table>);
+    else if (b.type === 'image' && b.src) out.push(<div className={`imgblk ${b.align} ${b.wrap ? 'wrap' : ''}`} key={i} style={{ width: `${b.width}%` }}><img src={b.src} alt="" /></div>);
   }
   return <>{out}</>;
 }
@@ -62,7 +69,7 @@ function Frame({ s, navy }: { s: Section; navy: boolean }) {
 export function ExamPreview({ exam }: { exam: Exam }) {
   const navy = exam.templateId !== 'classic';
   return (
-    <div className={`page tpl-${navy ? 'navy' : 'classic'}`} id="exam-preview">
+    <div className={`page tpl-${navy ? 'navy' : 'classic'}`} id="exam-preview" style={{ fontFamily: fontStack(exam.fontFamily), fontSize: `${exam.fontSize}pt` }}>
       <Header exam={exam} />
       {exam.sections.map((s) => (<div key={s.id}><Frame s={s} navy={navy} />{s.breakAfter && <div className="pagebreak" aria-hidden="true" />}</div>))}
       {(exam.footerRight || exam.footerLeft) && <div className="foot"><span>{exam.footerRight}</span><span>{exam.footerLeft}</span></div>}

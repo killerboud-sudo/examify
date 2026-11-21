@@ -4,6 +4,7 @@ import type { Exam, Block, Section } from '@/lib/schema';
 import { FIGURES } from '@/lib/figures/registry';
 import { TEMPLATES } from '@/lib/templates';
 import { compressImage } from '@/lib/image';
+import * as T from '@/lib/table';
 import { MathModal, type MathMode } from './MathModal';
 
 export type Selection = null | 'header' | { section: string };
@@ -58,7 +59,7 @@ function HeaderForm({ exam, onChange, back }: { exam: Exam; onChange: (e: Exam) 
 }
 
 type Target = { kind: 'new' } | { kind: 'edit'; bi: number } | { kind: 'insert'; bi: number };
-const LABEL = { text: 'نص', equation: 'معادلة', figure: 'شكل', image: 'صورة' } as const;
+const LABEL = { text: 'نص', equation: 'معادلة', figure: 'شكل', image: 'صورة', table: 'جدول', pagebreak: 'فاصل صفحة' } as const;
 
 function SectionForm({ section: s, onChange, back }: { section: Section; onChange: (s: Section) => void; back: () => void }) {
   const [target, setTarget] = useState<Target | null>(null);
@@ -110,19 +111,68 @@ function SectionForm({ section: s, onChange, back }: { section: Section; onChang
                 <label key={k}>{k}<input value={b[k]} onChange={(e) => setBlock(bi, { ...b, [k]: e.target.value })} /></label>))}
             </div>)}
           {b.type === 'image' && (
-            <label>العرض ({b.width}%)<input type="range" min={10} max={100} value={b.width} onChange={(e) => setBlock(bi, { ...b, width: Number(e.target.value) })} /></label>)}
+            <>
+              <label>العرض ({b.width}%)<input type="range" min={10} max={100} value={b.width} onChange={(e) => setBlock(bi, { ...b, width: Number(e.target.value) })} /></label>
+              <div className="row">
+                <select value={b.align} onChange={(e) => setBlock(bi, { ...b, align: e.target.value as 'left' | 'center' | 'right' })}>
+                  <option value="left">يسار التمرين</option><option value="center">وسط</option><option value="right">يمين التمرين</option></select>
+                <label className="chk"><input type="checkbox" checked={b.wrap} onChange={(e) => setBlock(bi, { ...b, wrap: e.target.checked })} /> التفاف النص حول الصورة</label>
+              </div>
+            </>)}
+          {b.type === 'table' && <TableEditor b={b} onChange={(nb) => setBlock(bi, nb)} />}
         </div>))}
       <div className="row">
         <button onClick={() => add({ type: 'text', text: '', bold: true })}>+ نص</button>
         <button onClick={() => setTarget({ kind: 'new' })}>+ معادلة</button>
         <button onClick={() => fileRef.current?.click()}>+ صورة</button>
+        <button onClick={() => add({ type: 'table', rows: T.newTable(), widths: [], bordered: true })}>+ جدول</button>
+        <button onClick={() => add({ type: 'pagebreak' })}>+ فاصل صفحة</button>
         {Object.entries(FIGURES).map(([k, f]) => <button key={k} onClick={() => add({ type: 'figure', ...f.defaults })}>+ {f.label}</button>)}
       </div>
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={async (e) => {
         const f = e.target.files?.[0]; e.target.value = '';
-        if (f) add({ type: 'image', src: await compressImage(f), width: 60 });
+        if (f) add({ type: 'image', src: await compressImage(f), width: 35, align: 'left', wrap: true });
       }} />
       <MathModal open={!!target} initial={cur?.type === 'equation' ? cur.latex : ''} allowModeToggle={target?.kind === 'insert'} onSubmit={submit} onClose={() => setTarget(null)} />
+    </div>
+  );
+}
+
+type TB = Extract<Block, { type: 'table' }>;
+function TableEditor({ b, onChange }: { b: TB; onChange: (b: TB) => void }) {
+  const [sel, setSel] = useState<[number, number]>([0, 0]);
+  const L = T.layout(b.rows);
+  const r = Math.min(sel[0], L.height - 1), c = Math.min(sel[1], L.width - 1);
+  const rows = (nr: T.Rows, resetW = false) => onChange({ ...b, rows: nr, widths: resetW ? [] : b.widths });
+  const w = Array.from({ length: L.width }, (_, i) => b.widths[i] ?? 0);
+  return (
+    <div className="tedit">
+      <div className="row">
+        <button onClick={() => rows(T.addRow(b.rows, r))}>+ صف</button>
+        <button onClick={() => rows(T.addCol(b.rows, c), true)}>+ عمود</button>
+        <button className="danger" onClick={() => rows(T.delRow(b.rows, r))}>حذف الصف</button>
+        <button className="danger" onClick={() => rows(T.delCol(b.rows, c), true)}>حذف العمود</button>
+      </div>
+      <div className="row">
+        <button onClick={() => rows(T.mergeRight(b.rows, r, c))}>دمج مع اليسار</button>
+        <button onClick={() => rows(T.mergeDown(b.rows, r, c))}>دمج مع الأسفل</button>
+        <button onClick={() => rows(T.split(b.rows, r, c))}>تقسيم</button>
+        <button onClick={() => rows(T.toggleHeader(b.rows, r, c))}>رأس/عادي</button>
+      </div>
+      <table className="tgrid"><tbody>
+        {Array.from({ length: L.height }, (_, ri) => (
+          <tr key={ri}>{L.anchors.filter((a) => a.r === ri).map((a) => (
+            <td key={a.c} colSpan={a.cell.colspan} rowSpan={a.cell.rowspan} className={a.r === r && a.c === c ? 'sel' : a.cell.header ? 'hd' : ''}>
+              <input dir="auto" value={a.cell.text} onFocus={() => setSel([a.r, a.c])} onChange={(e) => rows(T.setText(b.rows, a.r, a.c, e.target.value))} />
+            </td>))}</tr>))}
+      </tbody></table>
+      <div className="row">
+        <label className="chk"><input type="checkbox" checked={b.bordered} onChange={(e) => onChange({ ...b, bordered: e.target.checked })} /> حدود</label>
+        <button onClick={() => onChange({ ...b, widths: Array.from({ length: L.width }, () => Math.round(100 / L.width)) })}>أعمدة متساوية</button>
+        <button onClick={() => onChange({ ...b, widths: [] })}>عرض تلقائي</button>
+      </div>
+      {b.widths.length > 0 && <div className="row" aria-label="عرض الأعمدة %">{w.map((v, i) => (
+        <input key={i} type="number" min={5} max={95} className="wcol" value={v} onChange={(e) => onChange({ ...b, widths: w.map((x, k) => (k === i ? Number(e.target.value) : x)) })} />))}</div>}
     </div>
   );
 }

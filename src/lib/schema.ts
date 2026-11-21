@@ -16,10 +16,21 @@ export const FigureBlock = z.object({
   baseLabel: z.string().describe('e.g. "3 cm"'),
   heightLabel: z.string().describe('e.g. "4 cm"'),
 });
-export const AIBlock = z.discriminatedUnion('type', [TextBlock, EquationBlock, FigureBlock]);
-export const ImageBlock = z.object({ type: z.literal('image'), src: z.string(), width: z.number().describe('percent of the frame width, 10-100') });
+export const TableBlock = z.object({
+  type: z.literal('table'),
+  rows: z.array(z.array(z.object({
+    text: z.string().describe('cell content; math between $...$'),
+    colspan: z.number().describe('1 if not merged'), rowspan: z.number().describe('1 if not merged'),
+    header: z.boolean(),
+  }))).describe('HTML-style: a merged cell appears once (anchor); the cells it covers are omitted'),
+  widths: z.array(z.number()).describe('always []'),
+  bordered: z.boolean().describe('true unless the table has no visible borders'),
+});
+export const AIBlock = z.discriminatedUnion('type', [TextBlock, EquationBlock, FigureBlock, TableBlock]);
+export const ImageBlock = z.object({ type: z.literal('image'), src: z.string(), width: z.number(), align: z.enum(['left', 'center', 'right']), wrap: z.boolean() });
+export const PageBreakBlock = z.object({ type: z.literal('pagebreak') });
 
-export type Block = z.infer<typeof AIBlock> | z.infer<typeof ImageBlock>;
+export type Block = z.infer<typeof AIBlock> | z.infer<typeof ImageBlock> | z.infer<typeof PageBreakBlock>;
 
 export const ExamAI = z.object({
   header: z.object({
@@ -38,15 +49,15 @@ export const ExamAI = z.object({
 });
 
 export type Section = { id: string; title: string; points: number; breakAfter: boolean; blocks: Block[] };
-export type Exam = Omit<z.infer<typeof ExamAI>, 'sections'> & { templateId: string; sections: Section[] };
+export type Exam = Omit<z.infer<typeof ExamAI>, 'sections'> & { templateId: string; fontFamily: string; fontSize: number; sections: Section[] };
 
 export const DEFAULT_TEMPLATE = 'navy';
 export const toExam = (ai: z.infer<typeof ExamAI>, templateId = DEFAULT_TEMPLATE): Exam => ({
-  ...ai, templateId,
+  ...ai, templateId, fontFamily: 'amiri', fontSize: 15,
   sections: ai.sections.map((s) => ({ ...s, id: crypto.randomUUID(), breakAfter: false })),
 });
 export const emptyExam = (): Exam => ({
-  templateId: DEFAULT_TEMPLATE,
+  templateId: DEFAULT_TEMPLATE, fontFamily: 'amiri', fontSize: 15,
   header: { school: '', directorate: '', level: '', duration: '', day: '', calculatorAllowed: false },
   title: 'الفرض المحروس الأول', subtitle: '', sections: [], footerRight: '', footerLeft: 'بالتوفيق',
 });

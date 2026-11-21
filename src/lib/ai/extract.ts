@@ -11,18 +11,20 @@ Rules:
 - A geometric figure becomes a "figure" block (template right-triangle) with its letters and side labels.
 - Years: write them in normal order (2025/2026), not mirrored.
 - Header fields: school, directorate (wilaya), level, duration, day, calculatorAllowed. Titles never include the points: put the number in "points" (0 if absent).
+- Tables become "table" blocks: real rows/cells. A merged cell appears once with colspan/rowspan and the cells it covers are omitted (HTML semantics). header=true for header cells. Math in cells goes between $...$. widths=[] and bordered=true unless the table has no borders.
+- Several images are consecutive pages of the SAME exam, in order: merge them into one exam (one header, no duplicates).
 - Teacher name to subtitle/footerRight, "بالتوفيق" to footerLeft.
 - Use empty strings when something is absent.`;
 
-export async function extractExam(provider: ProviderId, imageDataUrl: string) {
+export async function extractExam(provider: ProviderId, images: string[]) {
   const { object } = await generateObject({
     model: PROVIDERS[provider].model(),
     schema: ExamAI,
     system: SYSTEM,
     maxRetries: 1,
     messages: [{ role: 'user', content: [
-      { type: 'text', text: 'Transcribe this exam into the schema.' },
-      { type: 'image', image: imageDataUrl },
+      { type: 'text', text: `Transcribe this exam into the schema (${images.length} image(s)).` },
+      ...images.map((image) => ({ type: 'image' as const, image })),
     ] }],
   });
   return toExam(object);
